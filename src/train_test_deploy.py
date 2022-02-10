@@ -13,7 +13,7 @@ from scipy import misc, ndimage, signal, sparse, io
 
 from keras import backend as K
 from keras.models import Model
-from tensforflow.keras.layers import Input,Flatten,Activation,Lambda,Conv2D,MaxPooling2D,UpSampling2D,BatchNormalization,PReLU
+from tensorflow.keras.layers import Input,Flatten,Activation,Lambda,Conv2D,MaxPooling2D,UpSampling2D,BatchNormalization,PReLU
 from keras.regularizers import l2
 from keras.optimizers import SGD, Adam
 from keras.utils import plot_model
