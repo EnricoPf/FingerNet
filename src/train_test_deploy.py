@@ -13,24 +13,24 @@ from scipy import misc, ndimage, signal, sparse, io
 
 from keras import backend as K
 from keras.models import Model
+import tensorflow as tf
 from tensorflow.keras.layers import Input,Flatten,Activation,Lambda,Conv2D,MaxPooling2D,UpSampling2D,BatchNormalization,PReLU
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.optimizers import SGD, Adam
 from tensorflow.keras.utils import plot_model
 from keras.callbacks import ModelCheckpoint  
 
+#This Part should be removed since tensorflow 2 no longer needs to specify GPU options
 import argparse
 parser = argparse.ArgumentParser(description='Train-Test-Deploy')
-parser.add_argument('GPU', type=str, default="4",
-                    help='Your GPU ID')
-parser.add_argument('mode', type=str, default="train",
-                    help='train-test, test or deploy')
+parser.add_argument('GPU', type=str, default="4", help='Your GPU ID')
+parser.add_argument('mode', type=str, default="train", help='train-test, test or deploy')
 args = parser.parse_args()
-
 os.environ["CUDA_VISIBLE_DEVICES"]=args.GPU
 config = K.tf.ConfigProto(gpu_options=K.tf.GPUOptions(allow_growth=True))
 sess = K.tf.Session(config=config)
 K.set_session(sess)
+#End of gpu part
 
 batch_size = 2
 use_multiprocessing = False
