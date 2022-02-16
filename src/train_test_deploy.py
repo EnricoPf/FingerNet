@@ -23,6 +23,7 @@ from keras.optimizers import SGD, Adam
 from keras.utils import plot_model
 from keras.callbacks import ModelCheckpoint  
 
+#python train_test_deploy.py 0 deploy
 import argparse
 parser = argparse.ArgumentParser(description='Train-Test-Deploy')
 parser.add_argument('GPU', type=str, default="4",

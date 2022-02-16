@@ -1,2 +1,1 @@
- 
 python train_test_deploy.py 0 deploy
