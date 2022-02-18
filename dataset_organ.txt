@@ -1,5 +1,0 @@
--Folder_name
---seg_label (Mascara)
---ori-labels (Imagem de referência)
---mnt_labels (Minucia)
---images (Imagem)
