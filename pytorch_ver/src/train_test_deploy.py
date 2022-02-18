@@ -21,17 +21,19 @@ deploy_set = ['../datasets/NISTSD27/images/','../datasets/CISL24218/', \
 #python train_test_deploy.py deploy
 
 
-def img_normalization(img_input, m0=0.0, v0=1.0):
-    transform = transforms.compose([
-        transforms.toTensor()
-        transforms.Normalize(mean = m,std = sqrt(var))
-    ])
-    np_image = img_input.numpy()
-    m = np.mean(np_image)
-    std = np.std(np_image)
-    
-    
-    return;
+def img_normalization(im_input, m0 = 0.0, var0 = 1.0):
+    m = np.mean(im_input.numpy())
+    var = np.var(im_input.numpy())
+    #----------------------------
+    def compare(x):
+        value = (np.sqrt((var0*(x-m)*(x-m))/var))
+        if x > m:
+            return (m0+value)
+        else:
+            return (m0-value)
+    #---------------------------- 
+    im_input = im_input.apply_(compare)
+    return im_input       
 
 
 
