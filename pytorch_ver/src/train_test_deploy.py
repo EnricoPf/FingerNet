@@ -24,16 +24,14 @@ deploy_set = ['../datasets/NISTSD27/images/','../datasets/CISL24218/', \
 def img_normalization(im_input, m0 = 0.0, var0 = 1.0):
     m = np.mean(im_input.numpy())
     var = np.var(im_input.numpy())
-    #----------------------------
-    def compare(x):
-        value = (np.sqrt((var0*(x-m)*(x-m))/var))
-        if x > m:
-            return (m0+value)
-        else:
-            return (m0-value)
-    #---------------------------- 
-    im_input = im_input.apply_(compare)
-    return im_input       
+    #def compare(x):
+    #    value = (np.sqrt((var0*(x-m)*(x-m))/var))
+    #    if x > m:
+    #        return (m0+value)
+    #   else:
+    #        return (m0-value)
+    im_input = im_input.apply_(lambda x: (m0 + (np.sqrt((var0*(x-m)*(x-m))/var))) if (x>m) else (m0-(np.sqrt((var0*(x-m)*(x-m))/var))))
+    return im_input         
 
 
 
