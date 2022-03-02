@@ -1,11 +1,11 @@
 #coding=utf-8
+from hashlib import algorithms_guaranteed
 import os, sys, cv2, pickle
 from re import X
 from multiprocessing import Pool
 from functools import partial
 from time import time
 import matplotlib
-import numpy
 # Force matplotlib to not use any Xwindows backend.
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -13,12 +13,12 @@ from datetime import datetime
 from utils import *
 from scipy import misc, ndimage, signal, sparse, io
 
+import tensorflow as tf
+
 import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-import tensorflow as tf
 
 from keras import backend as K
 from keras.models import Model
@@ -76,79 +76,46 @@ def atan2(y_x):
     angle = K.tf.where(K.tf.logical_and(K.tf.less(x,0.0),  K.tf.less(y,0.0)), atan-np.pi, angle)
     return angle
 
-#padding function utilized to mimic TF SAME padding
-def GetPadConfig(input_size, pad_mode, pad_left, pad_right, kernel, stride):
-    if (pad_mode == 'SAME'):
-        output_size = int(math.ceil(float(input_size) / float(stride)))
-        pad_total = int((output_size - 1) * stride + kernel - input_size)
-        pad_left = int(pad_total / 2)
-        pad_right = pad_total - pad_left
-    elif (pad_mode == 'EXPLICIT'):
-        output_size = int((input_size + pad_left + pad_right - kernel) / stride) + 1
-    else:
-        raise RuntimeError('Wrong pad mode.')
-    return pad_left, pad_right
-
 # traditional orientation estimation
-def orientation(image, stride = 8, window = 17):
-    assert image.shape[3] == 1, 'Images must be grayscale'
-    #(a,b,c,d) -> (a,d,b,c)
-    image = image.view(-1,1,image.shape[1],image.shape[2])
-    strides = stride
-    E = torch.Tensor(np.ones([1,1,window,window]))
-    sobelx = torch.FloatTensor(np.reshape(np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=float), [1,1,3,3]))
-    sobely = torch.FloatTensor(np.reshape(np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=float), [1,1,3,3]))
-    gaussian_mask = torch.FloatTensor(np.reshape(gaussian2d((5,5),1),[1,1,5,5]))
-    #sobel_gradient
-    Ix = torch.nn.functional.conv2d(image,sobelx,stride = 1, padding = 'same')#sobel_x
-    Iy = torch.nn.functional.conv2d(image,sobely,stride = 1, padding = 'same')#sobel_y 
-    #eltwise_1
-    Ix2 = torch.mul(Ix[0,0,:,:],Ix[0,0,:,:])#IxIx
-    Ix2 = Ix2.view(1,1,Ix2.shape[0],Ix2.shape[1])
-    
-    Iy2 = torch.mul(Iy[0,0,:,:],Iy[0,0,:,:])#IyIy
-    Iy2 = Iy2.view(1,1,Iy2.shape[0],Iy2.shape[1])
-    
-    Ixy = torch.mul(Ix[0,0,:,:],Iy[0,0,:,:])#IxIy
-    Ixy = Ixy.view(1,1,Ixy.shape[0],Ixy.shape[1])
-    
-    #Padding for range_sum convolution    
-    #range_sum
-    P_top,P_bot = GetPadConfig(Ix2.shape[2],'SAME',0,0,window,strides)
-    P_left,P_right = GetPadConfig(Ix2.shape[3],'SAME',0,0,window,strides)
-    Ix2 = torch.nn.functional.pad(Ix2,(P_left,P_right,P_top,P_bot))
-    Gxx = torch.nn.functional.conv2d(Ix2,E,stride = strides)#Gxx_sum
-    
-    P_top,P_bot = GetPadConfig(Iy2.shape[2],'SAME',0,0,window,strides)
-    P_left,P_right = GetPadConfig(Iy2.shape[3],'SAME',0,0,window,strides)
-    Iy2 = torch.nn.functional.pad(Iy2,(P_left,P_right,P_top,P_bot))
-    Gyy = torch.nn.functional.conv2d(Iy2,E,stride = strides)#Gyy_sum
-    
-    P_top,P_bot = GetPadConfig(Ixy.shape[2],'SAME',0,0,window,strides)
-    P_left,P_right = GetPadConfig(Ixy.shape[3],'SAME',0,0,window,strides)
-    Ixy = torch.nn.functional.pad(Ixy,(P_left,P_right,P_top,P_bot))
-    Gxy = torch.nn.functional.conv2d(Ixy,E,stride = strides)#Gxy_sum
-    #eltwise_2
-    Gxx_Gyy = torch.sub(Gxx,Gyy)#Gxx_Gyy
-    theta = torch.atan2((2*Gxy),Gxx_Gyy) + np.pi
-    #gaussian_filter
-    P_top,P_bot = GetPadConfig(theta.shape[2],'SAME',0,0,5,1)
-    P_left,P_right = GetPadConfig(theta.shape[3],'SAME',0,0,5,1)
-    cos_theta = torch.nn.functional.pad(np.cos(theta),(P_left,P_right,P_top,P_bot))    
-    phi_x = torch.nn.functional.conv2d(cos_theta, gaussian_mask)#gaussian_x
-    
-    P_top,P_bot = GetPadConfig(theta.shape[2],'SAME',0,0,5,1)
-    P_left,P_right = GetPadConfig(theta.shape[3],'SAME',0,0,5,1)
-    sin_theta = torch.nn.functional.pad(np.sin(theta),(P_left,P_right,P_top,P_bot))    
-    phi_y = torch.nn.functional.conv2d(sin_theta, gaussian_mask)#gaussian_y
-    
-    theta = torch.atan2(phi_y,phi_x)/2
+def orientation(image, stride=8, window=17):
+    with K.tf.name_scope('orientation'):
+        assert image.get_shape().as_list()[3] == 1, 'Images must be grayscale'
+        strides = [1, stride, stride, 1]
+        E = np.ones([window, window, 1, 1])
+        sobelx = np.reshape(np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=float), [3, 3, 1, 1])
+        sobely = np.reshape(np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=float), [3, 3, 1, 1])
+        gaussian = np.reshape(gaussian2d((5, 5), 1), [5, 5, 1, 1])
+        with K.tf.name_scope('sobel_gradient'):
+            Ix = K.tf.nn.conv2d(image, sobelx, strides=[1,1,1,1], padding='SAME', name='sobel_x')
+            Iy = K.tf.nn.conv2d(image, sobely, strides=[1,1,1,1], padding='SAME', name='sobel_y')
+        with K.tf.name_scope('eltwise_1'):
+            Ix2 = K.tf.multiply(Ix, Ix, name='IxIx')
+            Iy2 = K.tf.multiply(Iy, Iy, name='IyIy')
+            Ixy = K.tf.multiply(Ix, Iy, name='IxIy')
+        with K.tf.name_scope('range_sum'):
+            Gxx = K.tf.nn.conv2d(Ix2, E, strides=strides, padding='SAME', name='Gxx_sum')
+            Gyy = K.tf.nn.conv2d(Iy2, E, strides=strides, padding='SAME', name='Gyy_sum')
+            Gxy = K.tf.nn.conv2d(Ixy, E, strides=strides, padding='SAME', name='Gxy_sum')
+        with K.tf.name_scope('eltwise_2'):
+            Gxx_Gyy = K.tf.subtract(Gxx, Gyy, name='Gxx_Gyy')
+            theta = atan2([2*Gxy, Gxx_Gyy]) + np.pi
+        # two-dimensional low-pass filter: Gaussian filter here
+        with K.tf.name_scope('gaussian_filter'):
+            phi_x = K.tf.nn.conv2d(K.tf.cos(theta), gaussian, strides=[1,1,1,1], padding='SAME', name='gaussian_x')
+            phi_y = K.tf.nn.conv2d(K.tf.sin(theta), gaussian, strides=[1,1,1,1], padding='SAME', name='gaussian_y')
+            theta = atan2([phi_y, phi_x])/2
     return theta
 
-class get_tra_ori(nn.Module):
-    def forward(self, input):
-        return orientation(input)
+
+
+
+def get_tra_ori():
+    img_input=Input(shape=(None, None, 1))
+    theta = Lambda(orientation)(img_input)
+    model = Model(inputs=[img_input,], outputs=[theta,])
+    return model
 tra_ori_model = get_tra_ori()
+
 def get_maximum_img_size_and_names(dataset, sample_rate=None):
     if sample_rate is None:
         sample_rate = [1]*len(dataset)
@@ -234,6 +201,11 @@ def load_data(dataset, tra_ori_model, rand=False, aug=0.0, batch_size=1, sample_
         else:
             results = map(p_sub_load_data, zip(batch_name, batch_f_name))
         for j in xrange(batch_size):
+            
+            #4 camadas (x,y,z,w)
+            #x é o n° da imagem
+            #y e z são as dimensões
+            #w no alinhamento representa se tem alinhamento, se for 0 n tem, se for 1 tem
             img, seg, ali, mnt = results[j]
             if np.sum(ali) == 0:
                 have_alignment[j, 0, 0, 0] = 0
@@ -249,8 +221,17 @@ def load_data(dataset, tra_ori_model, rand=False, aug=0.0, batch_size=1, sample_
         label_seg[label_seg<=0] = 0
         minutiae_seg = (minutiae_o!=-1).astype(float)
         # get ori & mnt
-        orientation = tra_ori_model(alignment)
-        print(orientation.shape)
+        # first number is the number value, kinda like enumerate, then the dimensions, and the fourth dimension is if the picture has minutiae
+        #salva o alinhamento, input, como um arquivo .pt que pode ser carregado depois
+        align = torch.Tensor(alignment)
+        torch.save(align,'input_origin.pt')
+        
+        orientation = tra_ori_model.predict(alignment)
+        #salva a orientação, output
+        saver = torch.Tensor(orientation)
+        torch.save(saver,'output_origin.pt')
+        #-----------------------------------------
+        
         orientation = orientation/np.pi*180+90
         orientation[orientation>=180.0] = 0.0 # orientation [0, 180)
         minutiae_o = minutiae_o/np.pi*180+90 # [90, 450)
