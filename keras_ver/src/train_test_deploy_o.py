@@ -200,8 +200,7 @@ def load_data(dataset, tra_ori_model, rand=False, aug=0.0, batch_size=1, sample_
             results = p.map(p_sub_load_data, zip(batch_name, batch_f_name))
         else:
             results = map(p_sub_load_data, zip(batch_name, batch_f_name))
-        for j in xrange(batch_size):
-            
+        for j in xrange(batch_size):            
             #4 camadas (x,y,z,w)
             #x é o n° da imagem
             #y e z são as dimensões
@@ -223,13 +222,9 @@ def load_data(dataset, tra_ori_model, rand=False, aug=0.0, batch_size=1, sample_
         # get ori & mnt
         # first number is the number value, kinda like enumerate, then the dimensions, and the fourth dimension is if the picture has minutiae
         #salva o alinhamento, input, como um arquivo .pt que pode ser carregado depois
-        align = torch.Tensor(alignment)
-        torch.save(align,'input_origin.pt')
         
         orientation = tra_ori_model.predict(alignment)
         #salva a orientação, output
-        saver = torch.Tensor(orientation)
-        torch.save(saver,'output_origin.pt')
         #-----------------------------------------
         
         orientation = orientation/np.pi*180+90
@@ -291,7 +286,6 @@ def select_max(x):
     x = x / (K.sum(x, axis=-1, keepdims=True)+K.epsilon()) # prevent two or more ori is selected
     return x  
 
-#--------------------------------------
 def conv_bn_prelu(bottom, w_size, name, strides=(1,1), dilation_rate=(1,1)):
     if dilation_rate == (1,1):
         conv_type = 'conv'
@@ -346,65 +340,20 @@ def get_main_net(input_shape=(512,512,1), weights_path=None):
     seg_3=Conv2D(1, (1,1), padding='same', name='seg_3_2')(seg_3)
 
     # sum fusion for ori
-    ori_out=Lambda(merge_sum)([ori_1, ori_2, ori_3]) 
+    ori_out=Lambda(merge_sum)([ori_1, ori_2, ori_3]) # Certamente é essa parte, a duvida é qual deles
     ori_out_1=Activation('sigmoid', name='ori_out_1')(ori_out)
     ori_out_2=Activation('sigmoid', name='ori_out_2')(ori_out)
 
     # sum fusion for segmentation
     seg_out=Lambda(merge_sum)([seg_1, seg_2, seg_3])
     seg_out=Activation('sigmoid', name='seg_out')(seg_out)
-    # ----------------------------------------------------------------------------
-    # enhance part
-    filters_cos, filters_sin = gabor_bank(stride=2, Lambda=8)
-    filter_img_real = Conv2D(filters_cos.shape[3],(filters_cos.shape[0],filters_cos.shape[1]),
-        weights=[filters_cos, np.zeros([filters_cos.shape[3]])], padding='same',
-        name='enh_img_real_1')(img_input)
-    filter_img_imag = Conv2D(filters_sin.shape[3],(filters_sin.shape[0],filters_sin.shape[1]),
-        weights=[filters_sin, np.zeros([filters_sin.shape[3]])], padding='same',
-        name='enh_img_imag_1')(img_input)
-    ori_peak = Lambda(ori_highest_peak)(ori_out_1)
-    ori_peak = Lambda(select_max)(ori_peak) # select max ori and set it to 1
-    upsample_ori = UpSampling2D(size=(8,8))(ori_peak)
-    seg_round = Activation('softsign')(seg_out)      
-    upsample_seg = UpSampling2D(size=(8,8))(seg_round)
-    mul_mask_real = Lambda(merge_mul)([filter_img_real, upsample_ori])
-    enh_img_real = Lambda(reduce_sum, name='enh_img_real_2')(mul_mask_real)
-    mul_mask_imag = Lambda(merge_mul)([filter_img_imag, upsample_ori])
-    enh_img_imag = Lambda(reduce_sum, name='enh_img_imag_2')(mul_mask_imag)
-    enh_img = Lambda(atan2, name='phase_img')([enh_img_imag, enh_img_real])
-    enh_seg_img = Lambda(merge_concat, name='phase_seg_img')([enh_img, upsample_seg])
-    # ----------------------------------------------------------------------------
-    # mnt part
-    mnt_conv=conv_bn_prelu(enh_seg_img, (64,9,9), 'mnt_1_1') 
-    mnt_conv=MaxPooling2D(pool_size=(2,2),strides=(2,2))(mnt_conv)
-
-    mnt_conv=conv_bn_prelu(mnt_conv, (128,5,5), 'mnt_2_1') 
-    mnt_conv=MaxPooling2D(pool_size=(2,2),strides=(2,2))(mnt_conv)
-
-    mnt_conv=conv_bn_prelu(mnt_conv, (256,3,3), 'mnt_3_1')  
-    mnt_conv=MaxPooling2D(pool_size=(2,2),strides=(2,2))(mnt_conv)    
-
-    mnt_o_1=Lambda(merge_concat)([mnt_conv, ori_out_1])
-    mnt_o_2=conv_bn_prelu(mnt_o_1, (256,1,1), 'mnt_o_1_1')
-    mnt_o_3=Conv2D(180, (1,1), padding='same', name='mnt_o_1_2')(mnt_o_2)
-    mnt_o_out=Activation('sigmoid', name='mnt_o_out')(mnt_o_3)
-
-    mnt_w_1=conv_bn_prelu(mnt_conv, (256,1,1), 'mnt_w_1_1')
-    mnt_w_2=Conv2D(8, (1,1), padding='same', name='mnt_w_1_2')(mnt_w_1)
-    mnt_w_out=Activation('sigmoid', name='mnt_w_out')(mnt_w_2)
-
-    mnt_h_1=conv_bn_prelu(mnt_conv, (256,1,1), 'mnt_h_1_1')
-    mnt_h_2=Conv2D(8, (1,1), padding='same', name='mnt_h_1_2')(mnt_h_1)
-    mnt_h_out=Activation('sigmoid', name='mnt_h_out')(mnt_h_2) 
-
-    mnt_s_1=conv_bn_prelu(mnt_conv, (256,1,1), 'mnt_s_1_1')
-    mnt_s_2=Conv2D(1, (1,1), padding='same', name='mnt_s_1_2')(mnt_s_1)
-    mnt_s_out=Activation('sigmoid', name='mnt_s_out')(mnt_s_2)
-
+    
+    enh_img_real = seg_out
+    
     if args.mode == 'deploy':
-        model = Model(inputs=[img_input,], outputs=[enh_img_real, ori_out_1, ori_out_2, seg_out, mnt_o_out, mnt_w_out, mnt_h_out, mnt_s_out])
+        model = Model(inputs=[img_input,], outputs=[enh_img_real, ori_out_1, ori_out_2, seg_out])
     else:
-        model = Model(inputs=[img_input,], outputs=[ori_out_1, ori_out_2, seg_out, mnt_o_out, mnt_w_out, mnt_h_out, mnt_s_out])     
+        model = Model(inputs=[img_input,], outputs=[ori_out_1, ori_out_2, seg_out])     
     if weights_path:
         model.load_weights(weights_path, by_name=True)
     return model   
@@ -562,6 +511,7 @@ def train(input_shape=(512,512,1)):
                  'mnt_s_out':[seg_acc_pos, seg_acc_neg, seg_acc_all]})
     for epoch in range(100):
         for i, train in enumerate(load_data((img_name, folder_name, img_size), tra_ori_model, rand=True, aug=0.7, batch_size=batch_size)):
+            #train - image, label_ori, label_ori_o, label_seg, label_mnt_w, label_mnt_h, label_mnt_o, label_mnt_s, batch_name
             loss = main_net_model.train_on_batch(train[0], 
                 {'ori_out_1':train[1], 'ori_out_2':train[2], 'seg_out':train[3],
                 'mnt_w_out':train[4], 'mnt_h_out':train[5], 'mnt_o_out':train[6], 'mnt_s_out':train[7]})  
@@ -602,31 +552,26 @@ def label2mnt(mnt_s_out, mnt_w_out, mnt_h_out, mnt_o_out, thresh=0.5):
     mnt_final[mnt_final[:, 2]<0.0, 2] = mnt_final[mnt_final[:, 2]<0.0, 2]+2*np.pi
     mnt_final[:, 3] = mnt_s_out[mnt_list[:,0], mnt_list[:, 1]]
     return mnt_final
+
+
 def test(test_set, model, outdir, test_num=10, draw=True):
     logging.info("Testing %s:"%(test_set))
     img_name, folder_name, img_size = get_maximum_img_size_and_names(test_set)  
     main_net_model = get_main_net((img_size[0],img_size[1],1), model)
     nonsense = SGD(lr=0.0, momentum=0.0, decay=0.0, nesterov=False)    
     main_net_model.compile(optimizer=nonsense,
-        loss={'ori_out_1':ori_loss, 'ori_out_2':ori_o_loss, 'seg_out':seg_loss, 
-                'mnt_o_out':ori_o_loss, 'mnt_w_out':ori_o_loss, 'mnt_h_out':ori_o_loss, 'mnt_s_out':mnt_s_loss}, 
-        loss_weights={'ori_out_1':.1, 'ori_out_2':.1, 'seg_out':10., 
-                'mnt_w_out':.5, 'mnt_h_out':.5, 'mnt_o_out':.5,'mnt_s_out':200.},        
+        loss={'ori_out_1':ori_loss, 'ori_out_2':ori_o_loss, 'seg_out':seg_loss}, 
+        loss_weights={'ori_out_1':.1, 'ori_out_2':.1, 'seg_out':10.},        
         metrics={'ori_out_1':[ori_acc_delta_10,ori_acc_delta_20],
                  'ori_out_2':[ori_acc_delta_10,ori_acc_delta_20],
-                 'seg_out':[seg_acc_pos, seg_acc_neg, seg_acc_all],
-                 'mnt_o_out':[mnt_acc_delta_10,mnt_acc_delta_20],
-                 'mnt_w_out':[mnt_mean_delta,],
-                 'mnt_h_out':[mnt_mean_delta,],
-                 'mnt_s_out':[seg_acc_pos, seg_acc_neg, seg_acc_all]})
+                 'seg_out':[seg_acc_pos, seg_acc_neg, seg_acc_all]})
     ave_loss, ave_prf_nms = [], []
     for j, test in enumerate(load_data((img_name, folder_name, img_size), tra_ori_model, rand=False, aug=0.0, batch_size=1)):      
         if j < test_num:
             logging.info("%d / %d: %s"%(j+1, len(img_name), img_name[j]))    
-            ori_out_1, ori_out_2, seg_out, mnt_o_out, mnt_w_out, mnt_h_out, mnt_s_out  = main_net_model.predict(test[0])
+            ori_out_1, ori_out_2, seg_out  = main_net_model.predict(test[0])
             metrics = main_net_model.train_on_batch(test[0], 
-                {'ori_out_1':test[1], 'ori_out_2':test[2], 'seg_out':test[3],
-                'mnt_w_out':test[4], 'mnt_h_out':test[5], 'mnt_o_out':test[6], 'mnt_s_out':test[7]})  
+                {'ori_out_1':test[1], 'ori_out_2':test[2], 'seg_out':test[3]})  
             ave_loss.append(metrics)
             logging.info("%s", " ".join(["%s:%.4f\n"%(x) for x in zip(main_net_model.metrics_names, metrics)]))
             mnt_gt = label2mnt(test[7], test[4], test[5], test[6])
@@ -664,7 +609,7 @@ def deploy(deploy_set, set_name=None):
         _, img_name = get_files_in_folder(deploy_set, '.bmp')
     img_size = misc.imread(deploy_set+img_name[0]+'.bmp', mode='L').shape
     img_size = np.array(img_size, dtype=np.int32)/8*8      
-    main_net_model = get_main_net((img_size[0],img_size[1],1), pretrain)
+    main_net_model = get_main_net((img_size[0],img_size[1],1), pretrain)    
     _, img_name = get_files_in_folder(deploy_set, '.bmp')
     time_c = []
     for i in xrange(0,len(img_name)):
@@ -673,19 +618,15 @@ def deploy(deploy_set, set_name=None):
         image = misc.imread(deploy_set+img_name[i]+'.bmp', mode='L') / 255.0
         image = image[:img_size[0],:img_size[1]]      
         image = np.reshape(image,[1, image.shape[0], image.shape[1], 1])
-        enhance_img, ori_out_1, ori_out_2, seg_out, mnt_o_out, mnt_w_out, mnt_h_out, mnt_s_out = main_net_model.predict(image) 
+        enhance_img, ori_out_1, ori_out_2, seg_out = main_net_model.predict(image) 
         time_afterconv = time()
         round_seg = np.round(np.squeeze(seg_out))
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(5, 5))
         seg_out = cv2.morphologyEx(round_seg, cv2.MORPH_OPEN, kernel)
-        mnt = label2mnt(np.squeeze(mnt_s_out)*np.round(np.squeeze(seg_out)), mnt_w_out, mnt_h_out, mnt_o_out, thresh=0.5)
-        mnt_nms = nms(mnt)
         ori = sess.run(ori_highest_peak(ori_out_1))                           
         ori = (np.argmax(ori, axis=-1)*2-90)/180.*np.pi  
         time_afterpost = time()
-        mnt_writer(mnt_nms, img_name[i], img_size, "%s/%s/%s.mnt"%(output_dir, set_name, img_name[i]))        
         draw_ori_on_img(image, ori, np.ones_like(seg_out), "%s/%s/%s_ori.png"%(output_dir, set_name, img_name[i]))        
-        draw_minutiae(image, mnt_nms[:,:3], "%s/%s/%s_mnt.png"%(output_dir, set_name, img_name[i]))
         misc.imsave("%s/%s/%s_enh.png"%(output_dir, set_name, img_name[i]), np.squeeze(enhance_img)*ndimage.zoom(np.round(np.squeeze(seg_out)), [8,8], order=0))
         misc.imsave("%s/%s/%s_seg.png"%(output_dir, set_name, img_name[i]), ndimage.zoom(np.round(np.squeeze(seg_out)), [8,8], order=0)) 
         io.savemat("%s/%s/%s.mat"%(output_dir, set_name, img_name[i]), {'orientation':ori, 'orientation_distribution_map':ori_out_1})
@@ -695,6 +636,43 @@ def deploy(deploy_set, set_name=None):
     time_c = np.mean(np.array(time_c),axis=0)
     logging.info("Average: load+conv: %.3fs, oir-select+seg-post+nms: %.3f, draw: %.3f"%(time_c[0],time_c[1],time_c[2]))
     return  
+
+from tensorflow.python.tools import freeze_graph
+
+def save(self, directory, filename):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    filepath = os.path.join(directory, filename + '.ckpt')
+    self.saver.save(self.sess, filepath)
+    return filepath
+
+def save_as_pb(self, directory, filename):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    # Save check point for graph frozen later
+    ckpt_filepath = self.save(directory=directory, filename=filename)
+    pbtxt_filename = filename + '.pbtxt'
+    pbtxt_filepath = os.path.join(directory, pbtxt_filename)
+    pb_filepath = os.path.join(directory, filename + '.pb')
+    # This will only save the graph but the variables will not be saved.
+    # You have to freeze your model first.
+    tf.train.write_graph(graph_or_graph_def=self.sess.graph_def, logdir=directory, name=pbtxt_filename, as_text=True)
+    # Freeze graph
+    # Method 1
+    freeze_graph.freeze_graph(input_graph=pbtxt_filepath, input_saver='', input_binary=False, input_checkpoint=ckpt_filepath, output_node_names='cnn/output', restore_op_name='save/restore_all', filename_tensor_name='save/Const:0', output_graph=pb_filepath, clear_devices=True, initializer_nodes='')
+    # Method 2
+    '''
+    graph = tf.get_default_graph()
+    input_graph_def = graph.as_graph_def()
+    output_node_names = ['cnn/output']
+    output_graph_def = graph_util.convert_variables_to_constants(self.sess, input_graph_def, output_node_names)
+    # For some models, we would like to remove training nodes
+    # output_graph_def = graph_util.remove_training_nodes(output_graph_def, protected_nodes=None)
+    with tf.gfile.GFile(pb_filepath, 'wb') as f:
+        f.write(output_graph_def.SerializeToString())
+    '''    
+    return pb_filepath
+
 
 def main():
     if args.mode == 'train':

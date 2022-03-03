@@ -59,6 +59,20 @@ output_dir = '../output/'+datetime.now().strftime('%Y%m%d-%H%M%S')
 logging = init_log(output_dir)
 copy_file(sys.path[0]+'/'+sys.argv[0], output_dir+'/')
 
+def gaussian2d(shape=(5,5),sigma=0.5):
+    """
+    2D gaussian mask - should give the same result as MATLAB's
+    fspecial('gaussian',[shape],[sigma])
+    """
+    m,n = [(ss-1.)/2. for ss in shape]
+    y,x = np.ogrid[-m:m+1,-n:n+1]
+    h = np.exp( -(x*x + y*y) / (2.*sigma*sigma) )
+    h[ h < np.finfo(h.dtype).eps*h.max() ] = 0
+    sumh = h.sum()
+    if sumh != 0:
+        h /= sumh
+    return h
+
 # image normalization
 def img_normalization(img_input, m0=0.0, var0=1.0):
     m = K.mean(img_input, axis=[1,2,3], keepdims=True)
@@ -149,6 +163,7 @@ class get_tra_ori(nn.Module):
     def forward(self, input):
         return orientation(input)
 tra_ori_model = get_tra_ori()
+
 def get_maximum_img_size_and_names(dataset, sample_rate=None):
     if sample_rate is None:
         sample_rate = [1]*len(dataset)
@@ -312,10 +327,19 @@ def select_max(x):
 
 #--------------------------------------
 def conv_bn_prelu(bottom, w_size, name, strides=(1,1), dilation_rate=(1,1)):
+    #w_size is a 3 int array ex:(64,3,3)
     if dilation_rate == (1,1):
         conv_type = 'conv'
     else:
         conv_type = 'atrousconv'
+    
+    P_top,P_bot = GetPadConfig(bottom.shape[1],'SAME',0,0,w_size[1],strides[0])
+    P_left,P_right = GetPadConfig(bottom.shape[2],'SAME',0,0,w_size[2],strides[1])
+
+    bottom = torch.nn.functional.pad(bottom,(P_left,P_right,P_top,P_bot))
+    
+    torch.nn.functional.
+    
     top = Conv2D(w_size[0], (w_size[1],w_size[2]),
         kernel_regularizer=l2(5e-5),
         padding='same', 
